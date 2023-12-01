@@ -7,7 +7,7 @@ use ccdpiggybank::*;
  const JAMES: AccountAddress = AccountAddress([1u8; 32]);
 
 // /// The initial balance of the ALICE test account.
- const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10_000);
+ const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
 
 // /// A [`Signer`] with one set of keys, used for signing transactions.
  const SIGNER: Signer = Signer::with_one_key();
@@ -80,14 +80,13 @@ fn test_insert_intact() {
     );
 }
 
-
 #[test]
-fn test_smash_intact() {
-    let (mut chain, initialization) = setup_chain_and_contract();
+fn test_smash_intact_not_owner() {
+   let (mut chain, initialization) = setup_chain_and_contract();
 
-    let update = chain
+    let update_err = chain
         .contract_update(
-            Signer::with_one_key(),
+            SIGNER,
             ALICE,
             Address::Account(ALICE),
             Energy::from(10000),
@@ -98,33 +97,22 @@ fn test_smash_intact() {
                 message: OwnedParameter::empty(),
             },
         )
-        .expect("Owner is allowed to smash intact piggy bank");
+        .expect_err("Smashing should only succeed for the owner");
 
-    let invoke = chain
-        .contract_invoke(
-            JAMES,
-            Address::Account(JAMES),
-            Energy::from(10000),
-            UpdateContractPayload {
-                amount: Amount::zero(),
-                address: initialization.contract_address,
-                receive_name: OwnedReceiveName::new_unchecked("ccdpiggybank.view".to_string()),
-                message: OwnedParameter::empty(),
-            },
-        )
-        .expect("Invoking `view` should always succeed");
+    let return_value = update_err
+        .return_value()
+        .expect("Contract should reject and thus return bytes");
+    let error: SmashError = from_bytes(&return_value)
+        .expect("Contract should return a `SmashError` in serialized form");
 
-    let (state, balance): (PiggyBankState, Amount) =
-        from_bytes(&invoke.return_value).expect("View should always return a valid result");
-    assert_eq!(state, PiggyBankState::Smashed, "Piggy bank is not smashed");
-    assert_eq!(balance, Amount::zero(), "Piggy bank has non-zero balance after being smashed");
     assert_eq!(
-        update.account_transfers().collect::<Vec<_>>(),
-        [(
-            initialization.contract_address,
-            Amount::zero(),
-            ALICE
-        )],
-        "The piggy bank made incorrect transfers when smashed"
+        error,
+        SmashError::NotOwner,
+        "Contract did not fail due to a NotOwner error"
     );
+    assert_eq!(
+        chain.account_balance_available(ALICE),
+        Some(ACC_INITIAL_BALANCE - update_err.transaction_fee),
+        "The invoker account was incorrectly charged"
+    )
 }

@@ -13,6 +13,12 @@ use core::fmt::Debug;
     Smashed
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize, Reject)]
+pub enum SmashError {
+    NotOwner,
+    AlreadySmashed,
+    TransferError, // Should never occur, see details below.
+}
 
 #[init(contract = "ccdpiggybank")]
 fn init(_ctx: &InitContext, _state: &mut StateBuilder) -> InitResult<PiggyBankState> {
@@ -27,16 +33,18 @@ fn piggy_insert(_ctx: &ReceiveContext, host: &Host<PiggyBankState>, _amount: Amo
 
 
 #[receive(contract = "ccdpiggybank", name = "smash", mutable)]
-fn piggy_smash(ctx: &ReceiveContext, host: &mut Host<PiggyBankState>) -> ReceiveResult<()> {
+fn piggy_smash(ctx: &ReceiveContext, host: &mut Host<PiggyBankState>) -> Result<(), SmashError> {
     let owner = ctx.owner();
     let sender = ctx.sender();
-    ensure!(sender.matches_account(&owner));
-    ensure!(*host.state() == PiggyBankState::Intact);
+    ensure!(sender.matches_account(&owner), SmashError::NotOwner);
+    ensure!(*host.state() == PiggyBankState::Intact, SmashError::AlreadySmashed);
 
     *host.state_mut() = PiggyBankState::Smashed;
 
     let balance = host.self_balance();
-    Ok(host.invoke_transfer(&owner, balance)?)
+    let transfer_result = host.invoke_transfer(&owner, balance);
+    ensure!(transfer_result.is_ok(), SmashError::TransferError);
+    Ok(())
 }
 
 #[receive(contract = "ccdpiggybank", name = "view")]
