@@ -4,55 +4,43 @@
 use concordium_std::*;
 use core::fmt::Debug;
 
-/// Your smart contract state.
-#[derive(Serialize, SchemaType)]
-pub struct State {
-    // Your state
+
+
+
+#[derive(Serialize, PartialEq, Eq, Debug, Clone, Copy)]
+enum PiggyBankState {
+    Intact, 
+    Smashed
 }
 
-/// Your smart contract errors.
-#[derive(Debug, PartialEq, Eq, Reject, Serialize, SchemaType)]
-pub enum Error {
-    /// Failed parsing the parameter.
-    #[from(ParseError)]
-    ParseParams,
-    /// Your error
-    YourError,
-}
 
-/// Init function that creates a new smart contract.
 #[init(contract = "ccdpiggybank")]
-fn init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
-    // Your code
-
-    Ok(State {})
+fn init(_ctx: &InitContext, _state: &mut StateBuilder) -> InitResult<PiggyBankState> {
+    Ok(PiggyBankState::Intact)
 }
 
-pub type MyInputType = bool;
-
-/// Receive function. The input parameter is the boolean variable `throw_error`.
-///  If `throw_error == true`, the receive function will throw a custom error.
-///  If `throw_error == false`, the receive function executes successfully.
-#[receive(
-    contract = "ccdpiggybank",
-    name = "receive",
-    parameter = "MyInputType",
-    error = "Error",
-    mutable
-)]
-fn receive(ctx: &ReceiveContext, _host: &mut Host<State>) -> Result<(), Error> {
-    // Your code
-
-    let throw_error = ctx.parameter_cursor().get()?; // Returns Error::ParseError on failure
-    if throw_error {
-        Err(Error::YourError)
-    } else {
+#[receive(contract = "ccdpiggybank", name = "insert", payable)]
+fn piggy_insert(_ctx: &ReceiveContext, host: &Host<PiggyBankState>, _amount: Amount) -> ReceiveResult<()>{
+        ensure!(*host.state() == PiggyBankState::Intact );
         Ok(())
-    }
 }
 
-/// View function that returns the content of the state.
-#[receive(contract = "ccdpiggybank", name = "view", return_value = "State")]
-fn view<'b>(_ctx: &ReceiveContext, host: &'b Host<State>) -> ReceiveResult<&'b State> {
-    Ok(host.state())
+
+#[receive(contract = "ccdpiggybank", name = "smash", mutable)]
+fn piggy_smash(ctx: &ReceiveContext, host: &mut Host<PiggyBankState>) -> ReceiveResult<()> {
+    let owner = ctx.owner();
+    let sender = ctx.sender();
+    ensure!(sender.matches_account(&owner));
+    ensure!(*host.state() == PiggyBankState::Intact);
+    *host.state_mut() = PiggyBankState::Smashed;
+
+    let balance = host.self_balance();
+    Ok(host.invoke_transfer(&owner, balance)?)
+}
+
+#[receive(contract = "ccdpiggybank", name = "view")]
+fn piggy_view(_ctx: &ReceiveContext, host: &Host<PiggyBankState>) -> ReceiveResult<(Amount, PiggyBankState)> {
+    let current_state = *host.state();
+    let current_balance = host.self_balance();
+    Ok((current_balance, current_state))
 }
