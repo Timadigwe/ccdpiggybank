@@ -8,7 +8,7 @@ use core::fmt::Debug;
 
 
 #[derive(Serialize, PartialEq, Eq, Debug, Clone, Copy)]
-enum PiggyBankState {
+ pub enum PiggyBankState {
     Intact, 
     Smashed
 }
@@ -32,6 +32,7 @@ fn piggy_smash(ctx: &ReceiveContext, host: &mut Host<PiggyBankState>) -> Receive
     let sender = ctx.sender();
     ensure!(sender.matches_account(&owner));
     ensure!(*host.state() == PiggyBankState::Intact);
+
     *host.state_mut() = PiggyBankState::Smashed;
 
     let balance = host.self_balance();
